@@ -17,8 +17,22 @@ ROOT_PATH = '/data/docker/volumes/'
 TLS_CONFIG = docker.tls.TLSConfig(
   client_cert=('/data/dockertls/cert.pem', '/data/dockertls/key.pem')
 )
+#任务配置类
+class SchedulerConfig(object):
+    JOBS = [
+        {
+            'id': 'print_job', # 任务id
+            'func': '__main__:DeleteContainer', # 任务执行程序
+            'args': None, # 执行程序参数
+            'trigger': 'interval', # 任务执行类型，定时器
+            'seconds': 60, # 任务执行时间，单位秒
+        }
+    ]
+app = Flask(__name__)
+app.config.from_object(SchedulerConfig())
 
 def get_lastfiletime(userfile_path):
+    #获取最后更新的文件时间
     time_list = []
     for root, dir, files in os.walk(userfile_path):
         for file in files:
@@ -28,22 +42,17 @@ def get_lastfiletime(userfile_path):
     return time_list
 
 def RemoveContainer(container_name,base_url):
-
+    #删除容器
     client = docker.DockerClient(base_url=base_url, tls=TLS_CONFIG)
     container = client.containers.get(str(container_name))
-    # container_status = ContainerInfo.objects.filter(container_name=str(container_name)).values('container_status')
-
-    # if container_status[0]['container_status'] == ContainerStatus.ContainerRun:
     container.stop()
     container.remove()
 
-    # stu = ContainerInfo.objects.get(container_name=str(container_name))
-    # stu.container_status = ContainerStatus.ContainerStop
-    # stu.save()
     return 0
 
 
 def get_logtime(container_name, server_url):
+    #获取容器内最后一条log时间
     client1 = docker.DockerClient(server_url, tls=TLS_CONFIG)
     containers = client1.containers.get(container_name)
     log = containers.logs()
@@ -61,30 +70,14 @@ def get_logtime(container_name, server_url):
 
     return timestamp+28800
 
-
-
-
-#任务配置类
-class SchedulerConfig(object):
-    JOBS = [
-        {
-            'id': 'print_job', # 任务id
-            'func': '__main__:DeleteContainer', # 任务执行程序
-            'args': None, # 执行程序参数
-            'trigger': 'interval', # 任务执行类型，定时器
-            'seconds': 60, # 任务执行时间，单位秒
-        }
-    ]
-#定义任务执行程序
 def DeleteContainer():
+    #关闭一小时内无操作的容器
     run_time = 3600
     flag = 0
     client = docker.DockerClient(base_url=BASE_URL, tls=TLS_CONFIG)
     cons = client.containers.list()
     used_time = 0
-    # user = ContainerInfo.objects.filter(container_status=ContainerStatus.ContainerRun).values('container_name')
     for con in cons:
-        # try:
         file_time = get_lastfiletime(ROOT_PATH+con.name+'workspace/')
         log_time = get_logtime(con.name, BASE_URL)
         if file_time:
@@ -92,7 +85,6 @@ def DeleteContainer():
             used_time = max(file_time, log_time)
         else:
             used_time = log_time
-
         current_time = time.time()
         if current_time-used_time > run_time:
             RemoveContainer(con.name, BASE_URL)
@@ -100,9 +92,8 @@ def DeleteContainer():
 
 
     return 0
-app = Flask(__name__)
-#为实例化的flask引入定时任务配置
-app.config.from_object(SchedulerConfig())
+
+
 if __name__ == '__main__':
     scheduler = APScheduler()  # 实例化APScheduler
     scheduler.init_app(app)  # 把任务列表载入实例flask
