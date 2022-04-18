@@ -34,23 +34,11 @@ class OpenDockerAPI(View):
     def get(self, request):
         # username = request.GET['user_id']
         logger.info('OpenDocker start...')
-        # # 水杉
         access_token = request.GET.get('access_token')
-        # ##测试
-        # auth = 'Bearer ' + access_token1
-        # headers = {'Authorization': auth}
-        # url1 = 'http://api.shuishan.net.cn/api/user/oauth/client'
-        # data1 = {"clientId":"vscode"}
-        # response = requests.post(url=url1, headers=headers, json=data1)
-        # print('--->1 : ', headers)
-        # print('--->2 : ', response.text)
-        # ##测试
-        # access_token = json.loads(response.text)['data']['access_token']
-        # access_token = '00d91ba0-3d0c-4c11-93b4-362318dfba6a'
+        #从水杉获取用户信息
         url = 'http://api.shuishan.net.cn/api/user/oauth/info'
         data = {"accessToken": access_token, "appId": "vscode"}
         res = requests.post(url=url, json=data)
-        # print('--->3: ', res.text)
         if res.status_code != 200:
             return HttpResponse("post failed")
         if json.loads(res.text)['respCode'] != '20000':
@@ -66,16 +54,18 @@ class OpenDockerAPI(View):
         else:
             password_sha = user_dic['passwdSha256']
         logger.info(password_sha)
+
         client = docker.DockerClient(base_url=BASE_URL, tls=TLS_CONFIG)
         cons = client.containers.list()
-        # username = 'test0829'
 
+        #判断容器是否已经创建
         flag = 0
         for con in cons:
             if con.name == username:
                 flag=1
                 break
         if flag == 1:
+            #如果已经创建，只需要获取容器的映射端口
             client = docker.DockerClient(base_url=BASE_URL, tls=TLS_CONFIG)
             container = client.containers.get(str(username))
             container.start()
@@ -83,7 +73,7 @@ class OpenDockerAPI(View):
             user_ports = container.ports[PORT][0]['HostPort']
             logger.info(username+'start container')
         else:
-
+            #如果没有创建，需要创建容器，再获取映射端口
             container = CreateDocker(username,password_sha)
             container.start()
             client = docker.DockerClient(base_url=BASE_URL, tls=TLS_CONFIG)
@@ -96,12 +86,15 @@ class OpenDockerAPI(View):
         # return JsonResponse(data)
         
 def docker_filecopy(root_path,data_path,user_id):
+
     user_dirs = root_path + user_id
     if not os.path.exists(user_dirs):
         shutil.copytree(data_path, user_dirs+'//')
     return user_dirs
 
 def CreateDocker(user_id,password):
+    #创建容器
+
     port = get_free_port()
     client = docker.DockerClient(base_url=BASE_URL, tls=TLS_CONFIG)
     volumes_path = str(user_id)
@@ -125,12 +118,11 @@ def CreateDocker(user_id,password):
     m4 = docker.types.Mount(target='/var', source=str(user_id) + 'var')
     m5 = docker.types.Mount(target='/etc', source=str(user_id) + 'etc')
     container = client.containers.create(image=IMAGE_NAME, name=str(user_id),environment=environment,cap_add=["SYS_PTRACE"], mounts=[volumes_mount1,volumes_mount2,volumes_mount3,m1,m2,m3,m4,m5], volumes=volumes,ports={PORT: port}, detach=True)
-
     return container
 
 
-
 def creat_file(user_id,password):
+    #创建需要映射的密码文件
     dirs = PASSWORD_PATH + str(user_id) + '/.config/'
     yaml_obj = {'bind-addr': '127.0.0.1:8080', 'auth': 'password', 'password': [], 'cert': 'false'}
     if not os.path.exists(dirs):
@@ -147,7 +139,6 @@ def Get_Port():
     return port
 
 def isInuseLinux(port):
-    #not show pid to avoid complex
     if os.popen('netstat -na | grep :' + str(port)).readlines():
         portIsUse = True
     else:
